@@ -254,6 +254,8 @@ auto convImpl
     (InputTensor input, KernelTensor kernel, PreAlloc prealloc, MaskTensor mask) @nogc nothrow
 if (InputTensor.init.shape.length == 2)
 {
+    alias InputType = Unqual!(DeepElementType!InputTensor);
+
     auto krs = kernel.length!0; // kernel rows
     auto kcs = kernel.length!1; // kernel rows
 
@@ -290,7 +292,7 @@ if (InputTensor.init.shape.length == 2)
         void worker(int i, int threadIndex) nothrow @nogc {
             auto prow = packedWindows[i];
             foreach (p; prow)
-                p[krh, kch].a = reduce!kapply(0.0f, p.unzip!'b', kernel_ls);
+                p[krh, kch].a = reduce!(kapply!InputType)(0.0f, p.unzip!'b', kernel_ls);
         }
         pool.parallelFor(cast(int)packedWindows.length, &worker);
     }
@@ -301,7 +303,7 @@ if (InputTensor.init.shape.length == 2)
             auto prow = packedWindows[i];
             foreach (p; prow)
                 if (p[krh, kch].c)
-                    p[krh, kch].a = reduce!kapply(0.0f, p.unzip!'b', kernel_ls);
+                    p[krh, kch].a = reduce!(kapply!InputType)(0.0f, p.unzip!'b', kernel_ls);
         }
         pool.parallelFor(cast(int)packedWindows.length, &worker);
     }
@@ -371,9 +373,9 @@ do
     }
 }
 
-void handleEdgeConv2d(alias bc, SliceKind kind0, SliceKind kind1, SliceKind kind2, SliceKind kind3, T, K, M)(
+void handleEdgeConv2d(alias bc, SliceKind kind0, SliceKind kind1, SliceKind kind2, SliceKind kind3, T, TP, K, M)(
     Slice!(T*, 2LU, kind0) input,
-    Slice!(T*, 2LU, kind1) prealloc,
+    Slice!(TP*, 2LU, kind1) prealloc,
     Slice!(K*, 2LU, kind2) kernel,
     Slice!(M*, 2LU, kind3) mask, 
     size_t[2] rowRange, size_t[2] colRange)
@@ -393,7 +395,7 @@ do
 
     auto roi = prealloc[rowRange[0] .. rowRange[1], colRange[0] .. colRange[1]];
 
-    T t;
+    Unqual!TP t;
     foreach (prow; roi)
     {
         c = cast(int)colRange[0];
