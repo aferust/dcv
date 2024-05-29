@@ -90,7 +90,7 @@ in
     static assert(isSlice!KernelTensor, "Kernel tensor has to be of type mir.ndslice.slice.Slice");
     static assert(isSlice!MaskTensor, "Mask tensor has to be of type mir.ndslice.slice.Slice");
     static assert(isBoundaryCondition!bc, "Invalid boundary condition test function.");
-    static assert(isAssignable!(DeepElementType!InputTensor, DeepElementType!KernelTensor),
+    static assert(isAssignable!(Unqual!(DeepElementType!InputTensor), Unqual!(DeepElementType!KernelTensor)),
             "Incompatible types for input and kernel");
 
     immutable N = InputTensor.init.shape.length;
@@ -132,11 +132,11 @@ do
 }
 
 @nogc nothrow
-auto conv(alias bc = neumann, InputTensor, KernelTensor)
+auto conv(alias bc = neumann, InputTensor, KernelTensor, SlicePreAlloc)
 (
     InputTensor input,
     KernelTensor kernel,
-    Slice!(RCI!(Unqual!(DeepElementType!InputTensor)), InputTensor.N) prealloc
+    SlicePreAlloc prealloc
 )
 {
     return conv!bc(input, kernel, prealloc, KernelTensor.init);
@@ -333,16 +333,11 @@ if (InputTensor.init.shape.length == 3)
 }
 
 @nogc nothrow @fastmath :
-void handleEdgeConv1d(alias bc, T, K, M,
-    SliceKind kindi,
-    SliceKind kindp,
-    SliceKind kindk,
-    SliceKind kindm,
-    )(
-    Slice!(T*, 1LU, kindi) input,
-    Slice!(T*, 1LU, kindp) prealloc,
-    Slice!(K*, 1LU, kindk) kernel,
-    Slice!(M*, 1LU, kindm) mask,
+void handleEdgeConv1d(alias bc, SliceInput, SlicePreAlloc, SliceKernel, SliceMask)(
+    SliceInput input,
+    SlicePreAlloc prealloc,
+    SliceKernel kernel,
+    SliceMask mask,
     size_t from, size_t to)
 in
 {
@@ -355,7 +350,7 @@ do
 
     bool useMask = !mask.empty;
 
-    T t;
+    Unqual!(DeepElementType!SlicePreAlloc) t;
     foreach (ref p; prealloc[from .. to])
     {
         if (useMask && mask[i] <= 0)
@@ -373,11 +368,11 @@ do
     }
 }
 
-void handleEdgeConv2d(alias bc, SliceKind kind0, SliceKind kind1, SliceKind kind2, SliceKind kind3, T, TP, K, M)(
-    Slice!(T*, 2LU, kind0) input,
-    Slice!(TP*, 2LU, kind1) prealloc,
-    Slice!(K*, 2LU, kind2) kernel,
-    Slice!(M*, 2LU, kind3) mask, 
+void handleEdgeConv2d(alias bc, SliceInput, SlicePreAlloc, SliceKernel, SliceMask)(
+    SliceInput input,
+    SlicePreAlloc prealloc,
+    SliceKernel kernel,
+    SliceMask mask, 
     size_t[2] rowRange, size_t[2] colRange)
 in
 {
@@ -395,7 +390,7 @@ do
 
     auto roi = prealloc[rowRange[0] .. rowRange[1], colRange[0] .. colRange[1]];
 
-    Unqual!TP t;
+    Unqual!(DeepElementType!SlicePreAlloc) t;
     foreach (prow; roi)
     {
         c = cast(int)colRange[0];

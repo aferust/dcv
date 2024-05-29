@@ -663,65 +663,111 @@ pure @fastmath bool point_is_on_edge(SliceArray)(const ref SIFTKeypoint kp, cons
         return false;
 }
 
-@fastmath auto gaussian_blur(InputSlice)(const ref InputSlice img, float sigma)
+@fastmath auto gaussian_blur(InputSlice)(InputSlice img, float sigma)
 {
     int size = cast(int) ceil(6 * sigma);
     if (size % 2 == 0)
         size++;
-    const int center = size / 2;
-    auto kernel = uninitRCslice!float(1, size);
-    
-    float sum = 0;
-    foreach (k; -center .. center + 1)
+
+    Slice!(RCI!float, 2) filtered;
+
+    if(img.shape[0] < size || img.shape[1] < size )
     {
-        float val = exp(-(k * k) / (2 * sigma * sigma));
-        kernel[0, center + k] = val;
-        sum += val;
-    }
-    
-    kernel[] /= sum;
+        filtered = img;
+    }else{
 
-    auto tmp = uninitRCslice!float(img.shape);
-    auto filtered = uninitRCslice!float(img.shape);
-
-    // convolve vertical
-    import std.range : iota;
-    auto iterableLength0 = img.shape[1] ;
-
-    void worker0(int x, int threadIndex) nothrow @nogc @fastmath 
-    //for (int x = 0; x < img.shape[1]; x++) 
-    {
-        foreach_reverse (y; 0 .. img.shape[0])
+        const int center = size / 2;
+        auto kernel = uninitRCslice!float(size);
+        const _2sigmaxsigma = 2 * sigma * sigma;
+        float sum = 0;
+        foreach (k; -center .. center + 1)
         {
-            float _sum = 0;
-            foreach (k; 0 .. size)
-            {
-                int dy = -center + k;
-                _sum += img.getPixel(y + dy, x) * kernel[0, k];
-            }
-            tmp[y, x] = _sum;
+            float val = exp(-(k * k) / _2sigmaxsigma);
+            kernel[center + k] = val;
+            sum += val;
         }
-    }
-    pool.parallelFor(cast(int)iterableLength0, &worker0);
-    // convolve horizontal
-    auto iterableLength1 = img.shape[0] ;
-    void worker1(int y, int threadIndex) nothrow @nogc @fastmath
-    //for (int y = 0; y < img.shape[0]; y++) 
-    {
-        foreach (x; 0 .. img.shape[1])
+        
+        kernel[] /= sum;
+
+        auto tmp = uninitRCslice!float(img.shape);
+        filtered = uninitRCslice!float(img.shape);
+
+        // convolve vertical
+        import std.range : iota;
+        auto iterableLength0 = img.shape[1] ;
+
+        void worker0(int x, int threadIndex) nothrow @nogc @fastmath 
+        //for (int x = 0; x < img.shape[1]; x++) 
         {
-            float sum_ = 0;
-            foreach (k; 0 .. size)
+            foreach_reverse (y; 0 .. img.shape[0])
             {
-                int dx = -center + k;
-                sum_ += tmp.getPixel(y, x + dx) * kernel[0, k];
+                float _sum = 0;
+                foreach (k; 0 .. size)
+                {
+                    int dy = -center + k;
+                    _sum += img.getPixel(y + dy, x) * kernel[k];
+                }
+                tmp[y, x] = _sum;
             }
-            filtered[y, x] = sum_;
         }
+        pool.parallelFor(cast(int)iterableLength0, &worker0);
+        // convolve horizontal
+        auto iterableLength1 = img.shape[0] ;
+        void worker1(int y, int threadIndex) nothrow @nogc @fastmath
+        //for (int y = 0; y < img.shape[0]; y++) 
+        {
+            foreach (x; 0 .. img.shape[1])
+            {
+                float sum_ = 0;
+                foreach (k; 0 .. size)
+                {
+                    int dx = -center + k;
+                    sum_ += tmp.getPixel(y, x + dx) * kernel[k];
+                }
+                filtered[y, x] = sum_;
+            }
+        }
+        pool.parallelFor(cast(int)iterableLength1, &worker1);
     }
-    pool.parallelFor(cast(int)iterableLength1, &worker1);
-    
+
     return filtered;
+}
+
+@fastmath auto alittleSlower_gaussian_blur(InputSlice)(InputSlice img, float sigma)
+{
+    import dcv.imgproc : conv;
+
+    int size = cast(int) ceil(6 * sigma);
+    if (size % 2 == 0)
+        size++;
+
+    Slice!(RCI!float, 2) result;
+
+    if(img.shape[0] < size || img.shape[1] < size )
+    {
+        result = img;
+    }else{
+        const int center = size / 2;
+        auto kernel = uninitRCslice!float(size, size);
+        float sum = 0;
+
+        const _2sigmaxsigma = 2 * sigma * sigma;
+        foreach (flatIndex; 0..size*size)
+        {
+            const j = cast(int)(flatIndex / size);
+            const i = cast(int)(flatIndex % size);
+
+            const int x = i - center;
+            const int y = j - center;
+            const float val = exp(-(x * x + y * y) / (_2sigmaxsigma));
+            kernel[i, j] = val;
+            sum += val;
+        }
+        kernel[] /= sum;
+        result = conv(img, kernel); // conv uses parallelism
+    }
+
+    return result;
 }
 
 // easy and safe way for boundary conditions
