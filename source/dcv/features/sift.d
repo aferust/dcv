@@ -134,6 +134,8 @@ enum M_PI = PI;
 
 //*******************************************
 // SIFT algorithm parameters, used by default
+// https://www.ipol.im/pub/art/2014/82/article.pdf
+// Table 3: Parameters of the scale-space discretization and detection of SIFT keypoints.
 //*******************************************
 
 // digital scale space configuration and keypoint detection
@@ -200,7 +202,7 @@ ScaleSpacePyramid generate_gaussian_pyramid(InputSlice)(const ref InputSlice img
         // prepare base image for next octave
         const next_base_img = pyramid.octaves[i][imgs_per_octave - 3];
         
-        base_img = resize!nearestNeighbor(next_base_img.lightScope, [next_base_img.shape[0]/2, next_base_img.shape[1]/2]);
+        base_img = resize!nearestNeighbor(next_base_img, [next_base_img.shape[0]/2, next_base_img.shape[1]/2]);
     }
     
     return pyramid.move;
@@ -305,7 +307,7 @@ Tuple!(float, float, float) fit_quadratic(SliceArray)(ref SIFTKeypoint kp,
     float offset_x = -hinv12*g1 - hinv22*g2 - hinv23*g3;
     float offset_y = -hinv13*g1 - hinv23*g3 - hinv33*g3;
 
-    float interpolated_extrema_val = img.getPixel(y, x)
+    const float interpolated_extrema_val = img.getPixel(y, x)
                                 + 0.5f*(g1*offset_s + g2*offset_x + g3*offset_y);
     kp.extremum_val = interpolated_extrema_val;
     return tuple(offset_s, offset_x, offset_y);
@@ -663,7 +665,7 @@ pure @fastmath bool point_is_on_edge(SliceArray)(const ref SIFTKeypoint kp, cons
         return false;
 }
 
-@fastmath auto gaussian_blur(InputSlice)(InputSlice img, float sigma)
+@fastmath auto gaussian_blur(InputSlice)(const ref InputSlice img, float sigma)
 {
     int size = cast(int) ceil(6 * sigma);
     if (size % 2 == 0)
@@ -671,10 +673,10 @@ pure @fastmath bool point_is_on_edge(SliceArray)(const ref SIFTKeypoint kp, cons
 
     Slice!(RCI!float, 2) filtered;
 
-    if(img.shape[0] < size || img.shape[1] < size )
+    /*if(img.shape[0] < size || img.shape[1] < size )
     {
-        filtered = img;
-    }else{
+        filtered = cast(InputSlice)img;
+    }else{*/
 
         const int center = size / 2;
         auto kernel = uninitRCslice!float(size);
@@ -682,7 +684,7 @@ pure @fastmath bool point_is_on_edge(SliceArray)(const ref SIFTKeypoint kp, cons
         float sum = 0;
         foreach (k; -center .. center + 1)
         {
-            float val = exp(-(k * k) / _2sigmaxsigma);
+            const float val = exp(-(k * k) / _2sigmaxsigma);
             kernel[center + k] = val;
             sum += val;
         }
@@ -728,7 +730,7 @@ pure @fastmath bool point_is_on_edge(SliceArray)(const ref SIFTKeypoint kp, cons
             }
         }
         pool.parallelFor(cast(int)iterableLength1, &worker1);
-    }
+    //}
 
     return filtered;
 }
